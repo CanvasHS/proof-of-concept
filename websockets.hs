@@ -8,7 +8,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 main :: IO ()
-main = WS.runServer "0.0.0.0" 3000 app --runserver is een extreem simpele blockende server, later vervangen
+main = WS.runServer "0.0.0.0" 8000 app --runserver is een extreem simpele blockende server, later vervangen
 
 -- Hybi00() ondersteunt het verzenden van tekst, ruim genoeg voor ons
 app :: WS.Request -> WS.WebSockets WS.Hybi00 ()

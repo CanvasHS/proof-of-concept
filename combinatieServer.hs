@@ -23,9 +23,8 @@ import Control.Concurrent (forkIO)
 
 main :: IO ()
 main = do
-		forkIO serverHttp
-		WS.runServer "0.0.0.0" 8080 websockets --runserver is een extreem simpele server voor de websockets
-		
+		forkIO serverHttp --de httpserver draait in een apart thread
+		WS.runServer "0.0.0.0" 8080 websockets --runserver is een extreem simpele server voor de websockets	
 		
 serverHttp :: IO ()
 serverHttp = do
@@ -36,7 +35,7 @@ serverHttp = do
 --	HTTP GET
 httpget :: String -> WAI.Application
 httpget a req = return $ do 
-				WAI.ResponseBuilder status200 [("Content-Type", "text/html")] $ BL.copyByteString $ BU.fromString a
+					WAI.ResponseBuilder status200 [("Content-Type", "text/html")] $ BL.copyByteString $ BU.fromString a
 		
 --	WEBSOCKETS			
 -- RFC6455 heeft de beste browsersupport, zie ook: http://en.wikipedia.org/wiki/WebSocket#Browser_support
@@ -50,8 +49,16 @@ websockets rq = do
 vermenigvuldig :: WS.WebSockets WS.Hybi00 ()
 vermenigvuldig = forever $ do
 					msg <- WS.receiveData
-					WS.sendTextData $ resultaat ((read $ T.unpack msg)::Int)
+					WS.sendTextData $ resultaat $ readMsg msg
+					where 
+						readMsg :: T.Text -> Maybe Int
+						readMsg m = let rs = (reads $ T.unpack m)::[(Int, String)] in
+									if rs /= [] then
+										Just $ fst $ head rs
+									else
+										Nothing
 					
-resultaat :: Int -> T.Text
-resultaat 0 = "0 keer iets is 0, dat weet toch iedereen mallerd"
-resultaat x = T.pack $ show $ x*3	
+resultaat :: Maybe Int -> T.Text
+resultaat Nothing 	= "Dat is geen leesbaar getal, grapjas"
+resultaat (Just 0) 	= "0 keer iets is 0, dat weet toch iedereen mallerd"
+resultaat (Just x) 	= T.pack $ show $ x*3	
