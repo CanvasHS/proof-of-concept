@@ -1,0 +1,72 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+-- Deze proof of concept serveert zowel via http (op poort 8000) als websockets (8080) content. 
+-- De HTTP-server serveert een pagina die verbinding maakt met de websockets server
+
+-- Nodige cabal packages
+-- websockets
+-- warp
+-- blaze-html
+-- utf8-string
+
+import qualified Network.WebSockets as WS
+import Control.Monad (forever)
+import qualified Data.Text as T
+
+import qualified Network.Wai as WAI
+import Network.HTTP.Types (status200)
+import qualified Network.Wai.Handler.Warp as WRP (run)
+import qualified Blaze.ByteString.Builder as BL (copyByteString)
+import Data.Monoid
+import qualified Data.ByteString.UTF8 as BU
+import Control.Concurrent (forkIO)
+
+import Data.IORef (IORef, newIORef, atomicModifyIORef)
+import Control.Monad.Trans (liftIO)
+
+main :: IO ()
+main = do
+		forkIO serverHttp --de httpserver draait in een apart thread
+		counter <- newIORef 0
+		WS.runServer "0.0.0.0" 8080 $ websockets counter --runserver is een extreem simpele server voor de websockets	
+		
+serverHttp :: IO ()
+serverHttp = do
+				staticContent <- readFile "websocketstest.html"
+				WRP.run 8000 (httpget staticContent)
+				return ()
+
+--	HTTP GET
+httpget :: String -> WAI.Application
+httpget a req = return $ do 
+					WAI.ResponseBuilder status200 [("Content-Type", "text/html")] $ BL.copyByteString $ BU.fromString a
+		
+--	WEBSOCKETS			
+-- RFC6455 heeft de beste browsersupport, zie ook: http://en.wikipedia.org/wiki/WebSocket#Browser_support
+-- zit om een vage reden niet in SebSockets (ondanks dat doc zegt van wel), Hybi00 werkt iig in IE11 en Chrome 29
+websockets :: IORef Int -> WS.Request -> WS.WebSockets WS.Hybi00 ()
+websockets counter rq = do
+						WS.acceptRequest rq
+						WS.sendTextData $ T.pack "Hallo client, wat wil je met 3 vermenigvuldigen?"
+						vermenigvuldig counter
+					
+vermenigvuldig :: IORef Int -> WS.WebSockets WS.Hybi00 ()
+vermenigvuldig counter = forever $ do
+							msg <- WS.receiveData
+							newC <- liftIO $ incCounter counter
+							WS.sendTextData $ T.concat [resultaat $ readMsg msg, T.pack (" | De counter is: " ++ show newC)]
+							where 
+								readMsg :: T.Text -> Maybe Int
+								readMsg m = let rs = (reads $ T.unpack m)::[(Int, String)] in
+											if rs /= [] then
+												Just $ fst $ head rs
+											else
+												Nothing
+					
+resultaat :: Maybe Int -> T.Text
+resultaat Nothing  = "Dat is geen leesbaar getal, grapjas"
+resultaat (Just 0) = "0 keer iets is 0, dat weet toch iedereen mallerd"
+resultaat (Just x) = T.pack $ ("Je resultaat is: " ++ (show $ x*3))
+
+incCounter :: IORef Int -> IO Int
+incCounter c = atomicModifyIORef c (\ct -> (ct+1, ct))
